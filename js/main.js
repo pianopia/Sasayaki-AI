@@ -121,12 +121,12 @@ async function updateConfiguration() {
 
     // If connected, reconnect to apply changes
     if (isConnected) {
-        logMessage('Reconnecting to apply configuration changes...', 'system');
+        // logMessage('Reconnecting to apply configuration changes...', 'system');
         await disconnectFromWebsocket();
         await connectToWebsocket();
     }
 
-    logMessage('Configuration updated successfully', 'system');
+    //logMessage('Configuration updated successfully', 'system');
     
     // Close the config panel on mobile after applying settings
     if (window.innerWidth <= 768) {
@@ -185,27 +185,27 @@ document.addEventListener('keydown', (event) => {
 });
 
 // Handle logs collapse/expand
-toggleLogs.addEventListener('click', () => {
-    logsWrapper.classList.toggle('collapsed');
-    toggleLogs.textContent = logsWrapper.classList.contains('collapsed') ? 'expand_more' : 'expand_less';
-});
+// toggleLogs.addEventListener('click', () => {
+//     logsWrapper.classList.toggle('collapsed');
+//     toggleLogs.textContent = logsWrapper.classList.contains('collapsed') ? 'expand_more' : 'expand_less';
+// });
 
 // Collapse logs by default on mobile
-function handleMobileView() {
-    if (window.innerWidth <= 768) {
-        logsWrapper.classList.add('collapsed');
-        toggleLogs.textContent = 'expand_more';
-    } else {
-        logsWrapper.classList.remove('collapsed');
-        toggleLogs.textContent = 'expand_less';
-    }
-}
+// function handleMobileView() {
+//     if (window.innerWidth <= 768) {
+//         logsWrapper.classList.add('collapsed');
+//         toggleLogs.textContent = 'expand_more';
+//     } else {
+//         logsWrapper.classList.remove('collapsed');
+//         toggleLogs.textContent = 'expand_less';
+//     }
+// }
 
 // Listen for window resize
-window.addEventListener('resize', handleMobileView);
+// window.addEventListener('resize', handleMobileView);
 
 // Initial check
-handleMobileView();
+// handleMobileView();
 
 // Handle preset button clicks
 document.querySelectorAll('.preset-button').forEach(button => {
@@ -254,7 +254,7 @@ function logMessage(message, type = 'system') {
             emoji.textContent = '🫵';
             break;
         case 'ai':
-            emoji.textContent = '🤖';
+            emoji.textContent = 'SasayakiAI:';
             break;
     }
     logEntry.appendChild(emoji);
@@ -410,14 +410,14 @@ async function connectToWebsocket() {
     try {
         await client.connect(config);
         isConnected = true;
-        connectButton.textContent = 'Disconnect';
+        connectButton.textContent = '接続を停止';
         connectButton.classList.add('connected');
         //messageInput.disabled = false;
         //sendButton.disabled = false;
         micButton.disabled = false;
         //cameraButton.disabled = false;
         //screenButton.disabled = false;
-        logMessage('Connected to Gemini 2.0 Flash Multimodal Live API', 'system');
+        //logMessage('Connected to Gemini 2.0 Flash Multimodal Live API', 'system');
 
         // Add click handler to initialize audio on first interaction
         const initAudioHandler = async () => {
@@ -429,14 +429,14 @@ async function connectToWebsocket() {
             }
         };
         document.addEventListener('click', initAudioHandler);
-        logMessage('Audio initialized', 'system');
+        //logMessage('Audio initialized', 'system');
         
     } catch (error) {
         const errorMessage = error.message || 'Unknown error';
         Logger.error('Connection error:', error);
         logMessage(`Connection error: ${errorMessage}`, 'system');
         isConnected = false;
-        connectButton.textContent = 'Connect';
+        connectButton.textContent = 'SasayakiAIに接続';
         connectButton.classList.remove('connected');
         //messageInput.disabled = true;
         //sendButton.disabled = true;
@@ -461,14 +461,14 @@ function disconnectFromWebsocket() {
         isRecording = false;
         updateMicIcon();
     }
-    connectButton.textContent = 'Connect';
+    connectButton.textContent = 'SasayakiAIに接続';
     connectButton.classList.remove('connected');
     //messageInput.disabled = true;
     //sendButton.disabled = true;
     micButton.disabled = true;
     //cameraButton.disabled = true;
     //screenButton.disabled = true;
-    logMessage('Disconnected from server', 'system');
+    // logMessage('Disconnected from server', 'system');
     
     if (videoManager) {
         stopVideo();
@@ -493,15 +493,15 @@ function handleSendMessage() {
 
 // Event Listeners
 client.on('open', () => {
-    logMessage('WebSocket connection opened', 'system');
+    // logMessage('WebSocket connection opened', 'system');
 });
 
 client.on('log', (log) => {
-    logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
+    // logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
 });
 
 client.on('close', (event) => {
-    logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
+    // logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
 });
 
 client.on('audio', async (data) => {
@@ -509,7 +509,7 @@ client.on('audio', async (data) => {
         const streamer = await ensureAudioInitialized();
         streamer.addPCM16(new Uint8Array(data));
     } catch (error) {
-        logMessage(`Error processing audio: ${error.message}`, 'system');
+        // logMessage(`Error processing audio: ${error.message}`, 'system');
     }
 });
 
@@ -534,11 +534,11 @@ client.on('interrupted', () => {
     audioStreamer?.stop();
     isUsingTool = false;
     Logger.info('Model interrupted');
-    logMessage('Model interrupted', 'system');
+    //logMessage('Model interrupted', 'system');
 });
 
 client.on('setupcomplete', () => {
-    logMessage('Setup complete', 'system');
+    logMessage('会議の解析を始めます', 'system');
 });
 
 client.on('turncomplete', () => {
@@ -552,13 +552,13 @@ client.on('error', (error) => {
     } else {
         Logger.error('Unexpected error', error);
     }
-    logMessage(`Error: ${error.message}`, 'system');
+    // logMessage(`Error: ${error.message}`, 'system');
 });
 
 client.on('message', (message) => {
     if (message.error) {
         Logger.error('Server error:', message.error);
-        logMessage(`Server error: ${message.error}`, 'system');
+        // logMessage(`Server error: ${message.error}`, 'system');
     }
 });
 
@@ -582,7 +582,7 @@ connectButton.addEventListener('click', () => {
 //messageInput.disabled = true;
 //sendButton.disabled = true;
 //micButton.disabled = true;
-connectButton.textContent = 'Connect';
+connectButton.textContent = 'SasayakiAIに接続';
 
 /**
  * Handles the video toggle. Starts or stops video streaming.
@@ -608,7 +608,7 @@ async function handleVideoToggle() {
             //cameraIcon.textContent = 'videocam_off';
             //cameraButton.classList.add('active');
             Logger.info('Camera started successfully');
-            logMessage('Camera started', 'system');
+            //logMessage('Camera started', 'system');
 
         } catch (error) {
             Logger.error('Camera error:', error);
@@ -666,7 +666,7 @@ async function handleScreenShare() {
             screenIcon.textContent = 'stop_screen_share';
             screenButton.classList.add('active');
             Logger.info('Screen sharing started');
-            logMessage('Screen sharing started', 'system');
+            // logMessage('Screen sharing started', 'system');
 
         } catch (error) {
             Logger.error('Screen sharing error:', error);
