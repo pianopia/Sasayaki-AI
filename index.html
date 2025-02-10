@@ -11,10 +11,8 @@
     <div id="app">
 
         <!-- Main Controls -->
-        <div class="main-controls">
-            <button id="connect-button">Connect</button>
-            <button id="theme-toggle" class="material-symbols-outlined">light_mode</button>
-            <button id="config-toggle" class="material-symbols-outlined">settings</button>
+        <div class="main-controls" style="display:none;">
+            <button id="config-toggle" class="material-symbols-outlined" style="display:none;">settings</button>
         </div>
 
         <!-- Configuration Panel (Hidden by default on mobile) -->
@@ -59,10 +57,6 @@
         <div class="chat-interface">
             <!-- Logs Container (Collapsible on mobile) -->
             <div class="logs-wrapper">
-                <div class="logs-header">
-                    <span>Chat History</span>
-                    <button id="toggle-logs" class="material-symbols-outlined">expand_more</button>
-                </div>
                 <div id="logs-container"></div>
             </div>
             <!-- Audio Visualizers -->
@@ -71,19 +65,17 @@
                     <label>Input Audio</label>
                     <div id="input-audio-visualizer"></div>
                 </div>
-                <div class="visualizer-container">
-                    <label>Output Audio</label>
-                    <div id="audio-visualizer"></div>
-                </div>
             </div>
             <!-- Input Controls -->
             <div class="input-controls">
                 <!-- <input type="text" id="message-input" placeholder="Enter message..."> -->
                 <div class="action-buttons">
                     <!-- <button id="send-button">Send</button> -->
+                    <button id="connect-button">SasayakiAIに接続</button>
                     <button id="mic-button">
                         <span id="mic-icon" class="material-symbols-outlined">mic</span>
                     </button>
+                    <button id="theme-toggle" class="material-symbols-outlined">light_mode</button>
                 </div>
             </div>
         </div>
