@@ -1,6 +1,7 @@
 export const CONFIG = {
     API: {
-        KEY: 'YOUR_API_KEY_FROM_GOOGLE_AI_STUDIO',
+        // API keys are not stored in this file. Enter yours in the app settings UI
+        // (saved to localStorage) or inject at build time via globalThis.__GEMINI_API_KEY__.
         BASE_URL: 'wss://generativelanguage.googleapis.com/ws',
         VERSION: 'v1alpha',
         MODEL_NAME: 'models/gemini-2.0-flash-exp'

@@ -2,6 +2,11 @@ import { MultimodalLiveClient } from './core/websocket-client.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { CONFIG } from './config/config.js';
+import {
+    ensureGeminiApiKey,
+    getStoredGeminiApiKey,
+    setStoredGeminiApiKey,
+} from './config/api-key.js';
 import { Logger } from './utils/logger.js';
 
 /**
@@ -28,6 +33,7 @@ const inputAudioVisualizer = document.getElementById('input-audio-visualizer');
 const voiceSelect = document.getElementById('voice-select');
 const sampleRateInput = document.getElementById('sample-rate-input');
 const systemInstructionInput = document.getElementById('system-instruction');
+const apiKeyInput = document.getElementById('api-key-input');
 const applyConfigButton = document.getElementById('apply-config');
 const configToggle = document.getElementById('config-toggle');
 const toggleLogs = document.getElementById('toggle-logs');
@@ -62,8 +68,33 @@ let isScreenSharing = false;
 let screenRecorder = null;
 let isUsingTool = false;
 
-// Multimodal Client
-const client = new MultimodalLiveClient({ apiKey: CONFIG.API.KEY });
+// Multimodal Client (created when connecting; recreated if API key changes)
+let client = null;
+let clientApiKey = null;
+
+function createMultimodalClient(apiKey) {
+    return new MultimodalLiveClient({ apiKey });
+}
+
+function getActiveClient() {
+    if (!client) {
+        throw new Error('Client is not initialized');
+    }
+    return client;
+}
+
+function resetClientForApiKey(apiKey) {
+    if (client && clientApiKey === apiKey) {
+        return client;
+    }
+    if (client && isConnected) {
+        disconnectFromWebsocket();
+    }
+    client = createMultimodalClient(apiKey);
+    clientApiKey = apiKey;
+    registerClientEventHandlers(client);
+    return client;
+}
 
 // Initialize configuration values
 voiceSelect.value = CONFIG.VOICE.NAME;
@@ -113,6 +144,20 @@ async function updateConfiguration() {
     localStorage.setItem('gemini_output_sample_rate', newSampleRate.toString());
     localStorage.setItem('gemini_system_instruction', newInstruction);
 
+    let apiKeyChanged = false;
+    if (apiKeyInput) {
+        const newApiKey = apiKeyInput.value.trim();
+        if (newApiKey) {
+            apiKeyChanged = Boolean(clientApiKey && clientApiKey !== newApiKey);
+            setStoredGeminiApiKey(newApiKey);
+            if (apiKeyChanged) {
+                resetClientForApiKey(newApiKey);
+            }
+        }
+    }
+
+    const shouldReconnect = isConnected || apiKeyChanged;
+
     // If we have an active audio streamer, stop it
     if (audioStreamer) {
         audioStreamer.stop();
@@ -149,6 +194,11 @@ if (localStorage.getItem('gemini_output_sample_rate')) {
 if (localStorage.getItem('gemini_system_instruction')) {
     CONFIG.SYSTEM_INSTRUCTION.TEXT = localStorage.getItem('gemini_system_instruction');
     systemInstructionInput.value = CONFIG.SYSTEM_INSTRUCTION.TEXT;
+}
+
+const savedApiKey = getStoredGeminiApiKey();
+if (savedApiKey && apiKeyInput) {
+    apiKeyInput.value = savedApiKey;
 }
 
 // Add event listener for configuration changes
@@ -329,13 +379,13 @@ async function handleMicToggle() {
             
             await audioRecorder.start((base64Data) => {
                 if (isUsingTool) {
-                    client.sendRealtimeInput([{
+                    getActiveClient().sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
                         data: base64Data,
                         interrupt: true     // Model isn't interruptable when using tools, so we do it manually
                     }]);
                 } else {
-                    client.sendRealtimeInput([{
+                    getActiveClient().sendRealtimeInput([{
                         mimeType: "audio/pcm;rate=16000",
                         data: base64Data
                     }]);
@@ -387,6 +437,20 @@ async function resumeAudioContext() {
  * @returns {Promise<void>}
  */
 async function connectToWebsocket() {
+    const apiKey =
+        apiKeyInput?.value.trim() ||
+        ensureGeminiApiKey({ promptIfMissing: true });
+    if (!apiKey) {
+        logMessage('Gemini API キーが必要です。設定パネルで入力してください。', 'system');
+        return;
+    }
+    setStoredGeminiApiKey(apiKey);
+    if (apiKeyInput) {
+        apiKeyInput.value = apiKey;
+    }
+    resetClientForApiKey(apiKey);
+    const activeClient = getActiveClient();
+
     const config = {
         model: CONFIG.API.MODEL_NAME,
         generationConfig: {
@@ -408,7 +472,7 @@ async function connectToWebsocket() {
     };  
 
     try {
-        await client.connect(config);
+        await activeClient.connect(config);
         isConnected = true;
         connectButton.textContent = '接続を停止';
         connectButton.classList.add('connected');
@@ -450,7 +514,9 @@ async function connectToWebsocket() {
  * Disconnects from the WebSocket server.
  */
 function disconnectFromWebsocket() {
-    client.disconnect();
+    if (client) {
+        client.disconnect();
+    }
     isConnected = false;
     if (audioStreamer) {
         audioStreamer.stop();
@@ -486,81 +552,78 @@ function handleSendMessage() {
     const message = messageInput.value.trim();
     if (message) {
         logMessage(message, 'user');
-        client.send({ text: message });
+        getActiveClient().send({ text: message });
         messageInput.value = '';
     }
 }
 
-// Event Listeners
-client.on('open', () => {
-    // logMessage('WebSocket connection opened', 'system');
-});
+function registerClientEventHandlers(liveClient) {
+    liveClient.on('open', () => {
+        // logMessage('WebSocket connection opened', 'system');
+    });
 
-client.on('log', (log) => {
-    // logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
-});
+    liveClient.on('log', (log) => {
+        // logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
+    });
 
-client.on('close', (event) => {
-    // logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
-});
+    liveClient.on('close', (event) => {
+        // logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
+    });
 
-client.on('audio', async (data) => {
-    try {
-        const streamer = await ensureAudioInitialized();
-        streamer.addPCM16(new Uint8Array(data));
-    } catch (error) {
-        // logMessage(`Error processing audio: ${error.message}`, 'system');
-    }
-});
-
-client.on('content', (data) => {
-    if (data.modelTurn) {
-        if (data.modelTurn.parts.some(part => part.functionCall)) {
-            isUsingTool = true;
-            Logger.info('Model is using a tool');
-        } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
-            isUsingTool = false;
-            Logger.info('Tool usage completed');
+    liveClient.on('audio', async (data) => {
+        try {
+            const streamer = await ensureAudioInitialized();
+            streamer.addPCM16(new Uint8Array(data));
+        } catch (error) {
+            // logMessage(`Error processing audio: ${error.message}`, 'system');
         }
+    });
 
-        const text = data.modelTurn.parts.map(part => part.text).join('');
-        if (text) {
-            logMessage(text, 'ai');
+    liveClient.on('content', (data) => {
+        if (data.modelTurn) {
+            if (data.modelTurn.parts.some(part => part.functionCall)) {
+                isUsingTool = true;
+                Logger.info('Model is using a tool');
+            } else if (data.modelTurn.parts.some(part => part.functionResponse)) {
+                isUsingTool = false;
+                Logger.info('Tool usage completed');
+            }
+
+            const text = data.modelTurn.parts.map(part => part.text).join('');
+            if (text) {
+                logMessage(text, 'ai');
+            }
         }
-    }
-});
+    });
 
-client.on('interrupted', () => {
-    audioStreamer?.stop();
-    isUsingTool = false;
-    Logger.info('Model interrupted');
-    //logMessage('Model interrupted', 'system');
-});
+    liveClient.on('interrupted', () => {
+        audioStreamer?.stop();
+        isUsingTool = false;
+        Logger.info('Model interrupted');
+    });
 
-client.on('setupcomplete', () => {
-    logMessage('会議の解析を始めます', 'system');
-});
+    liveClient.on('setupcomplete', () => {
+        logMessage('会議の解析を始めます', 'system');
+    });
 
-client.on('turncomplete', () => {
-    isUsingTool = false;
-    //logMessage('Turn complete', 'system');
-});
+    liveClient.on('turncomplete', () => {
+        isUsingTool = false;
+    });
 
-client.on('error', (error) => {
-    if (error instanceof ApplicationError) {
-        Logger.error(`Application error: ${error.message}`, error);
-    } else {
-        Logger.error('Unexpected error', error);
-    }
-    // logMessage(`Error: ${error.message}`, 'system');
-});
+    liveClient.on('error', (error) => {
+        if (error instanceof ApplicationError) {
+            Logger.error(`Application error: ${error.message}`, error);
+        } else {
+            Logger.error('Unexpected error', error);
+        }
+    });
 
-client.on('message', (message) => {
-    if (message.error) {
-        Logger.error('Server error:', message.error);
-        // logMessage(`Server error: ${message.error}`, 'system');
-    }
-});
+    liveClient.on('message', (message) => {
+        if (message.error) {
+            Logger.error('Server error:', message.error);
+        }
+    });
+}
 
 //sendButton.addEventListener('click', handleSendMessage);
 // messageInput.addEventListener('keypress', (event) => {
@@ -600,7 +663,7 @@ async function handleVideoToggle() {
             
             await videoManager.start((frameData) => {
                 if (isConnected) {
-                    client.sendRealtimeInput([frameData]);
+                    getActiveClient().sendRealtimeInput([frameData]);
                 }
             });
 
@@ -655,7 +718,7 @@ async function handleScreenShare() {
             screenRecorder = new ScreenRecorder();
             await screenRecorder.start(screenPreview, (frameData) => {
                 if (isConnected) {
-                    client.sendRealtimeInput([{
+                    getActiveClient().sendRealtimeInput([{
                         mimeType: "image/jpeg",
                         data: frameData
                     }]);
