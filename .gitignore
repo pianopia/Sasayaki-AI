@@ -1,0 +1,5 @@
+.env
+.env.*
+!.env.example
+
+js/config/config.local.js

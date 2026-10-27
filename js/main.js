@@ -2,6 +2,7 @@ import { MultimodalLiveClient } from './core/websocket-client.js';
 import { AudioStreamer } from './audio/audio-streamer.js';
 import { AudioRecorder } from './audio/audio-recorder.js';
 import { CONFIG } from './config/config.js';
+import { getStoredApiKey, resolveApiKey, setStoredApiKey } from './config/api-key.js';
 import { Logger } from './utils/logger.js';
 
 /**
@@ -33,6 +34,7 @@ const configToggle = document.getElementById('config-toggle');
 const toggleLogs = document.getElementById('toggle-logs');
 const logsWrapper = document.querySelector('.logs-wrapper');
 const configContainer = document.getElementById('config-container');
+const apiKeyInput = document.getElementById('api-key-input');
 
 // Theme switcher
 const themeToggle = document.getElementById('theme-toggle');
@@ -62,8 +64,14 @@ let isScreenSharing = false;
 let screenRecorder = null;
 let isUsingTool = false;
 
-// Multimodal Client
-const client = new MultimodalLiveClient({ apiKey: CONFIG.API.KEY });
+// Multimodal Client (created when connecting, after API key is resolved)
+let client = null;
+
+function createMultimodalClient(apiKey) {
+    const instance = new MultimodalLiveClient({ apiKey });
+    registerClientEventHandlers(instance);
+    return instance;
+}
 
 // Initialize configuration values
 voiceSelect.value = CONFIG.VOICE.NAME;
@@ -149,6 +157,16 @@ if (localStorage.getItem('gemini_output_sample_rate')) {
 if (localStorage.getItem('gemini_system_instruction')) {
     CONFIG.SYSTEM_INSTRUCTION.TEXT = localStorage.getItem('gemini_system_instruction');
     systemInstructionInput.value = CONFIG.SYSTEM_INSTRUCTION.TEXT;
+}
+
+if (apiKeyInput) {
+    const storedKey = getStoredApiKey();
+    if (storedKey) {
+        apiKeyInput.value = storedKey;
+    }
+    apiKeyInput.addEventListener('change', () => {
+        setStoredApiKey(apiKeyInput.value);
+    });
 }
 
 // Add event listener for configuration changes
@@ -387,6 +405,21 @@ async function resumeAudioContext() {
  * @returns {Promise<void>}
  */
 async function connectToWebsocket() {
+    if (apiKeyInput?.value?.trim()) {
+        setStoredApiKey(apiKeyInput.value.trim());
+    }
+
+    const apiKey = await resolveApiKey();
+    if (!apiKey) {
+        logMessage('API キーが必要です。設定パネルで入力するか、接続時のプロンプトに入力してください。', 'system');
+        return;
+    }
+
+    if (client) {
+        client.disconnect();
+    }
+    client = createMultimodalClient(apiKey);
+
     const config = {
         model: CONFIG.API.MODEL_NAME,
         generationConfig: {
@@ -450,7 +483,7 @@ async function connectToWebsocket() {
  * Disconnects from the WebSocket server.
  */
 function disconnectFromWebsocket() {
-    client.disconnect();
+    client?.disconnect();
     isConnected = false;
     if (audioStreamer) {
         audioStreamer.stop();
@@ -492,19 +525,20 @@ function handleSendMessage() {
 }
 
 // Event Listeners
-client.on('open', () => {
+function registerClientEventHandlers(activeClient) {
+activeClient.on('open', () => {
     // logMessage('WebSocket connection opened', 'system');
 });
 
-client.on('log', (log) => {
+activeClient.on('log', (log) => {
     // logMessage(`${log.type}: ${JSON.stringify(log.message)}`, 'system');
 });
 
-client.on('close', (event) => {
+activeClient.on('close', (event) => {
     // logMessage(`WebSocket connection closed (code ${event.code})`, 'system');
 });
 
-client.on('audio', async (data) => {
+activeClient.on('audio', async (data) => {
     try {
         const streamer = await ensureAudioInitialized();
         streamer.addPCM16(new Uint8Array(data));
@@ -513,7 +547,7 @@ client.on('audio', async (data) => {
     }
 });
 
-client.on('content', (data) => {
+activeClient.on('content', (data) => {
     if (data.modelTurn) {
         if (data.modelTurn.parts.some(part => part.functionCall)) {
             isUsingTool = true;
@@ -530,23 +564,23 @@ client.on('content', (data) => {
     }
 });
 
-client.on('interrupted', () => {
+activeClient.on('interrupted', () => {
     audioStreamer?.stop();
     isUsingTool = false;
     Logger.info('Model interrupted');
     //logMessage('Model interrupted', 'system');
 });
 
-client.on('setupcomplete', () => {
+activeClient.on('setupcomplete', () => {
     logMessage('会議の解析を始めます', 'system');
 });
 
-client.on('turncomplete', () => {
+activeClient.on('turncomplete', () => {
     isUsingTool = false;
     //logMessage('Turn complete', 'system');
 });
 
-client.on('error', (error) => {
+activeClient.on('error', (error) => {
     if (error instanceof ApplicationError) {
         Logger.error(`Application error: ${error.message}`, error);
     } else {
@@ -555,12 +589,13 @@ client.on('error', (error) => {
     // logMessage(`Error: ${error.message}`, 'system');
 });
 
-client.on('message', (message) => {
+activeClient.on('message', (message) => {
     if (message.error) {
         Logger.error('Server error:', message.error);
         // logMessage(`Server error: ${message.error}`, 'system');
     }
 });
+}
 
 //sendButton.addEventListener('click', handleSendMessage);
 // messageInput.addEventListener('keypress', (event) => {
